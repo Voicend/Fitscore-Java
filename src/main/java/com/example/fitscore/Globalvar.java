@@ -3,15 +3,18 @@ package com.example.fitscore;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import javafx.util.Pair;
+import org.omg.CORBA.PUBLIC_MEMBER;
 import org.springframework.boot.autoconfigure.batch.BatchProperties;
 import org.springframework.boot.jackson.JsonObjectSerializer;
 
 import java.io.*;
 import java.util.*;
+import java.util.regex.Pattern;
+
 import com.alibaba.fastjson.*;
 
 
-public class Globalvar {//存放全局变量，以及实现了数据读入
+public class Globalvar {//存放全局变量，以及数据读入
     public static ModelsManager gmodels = new ModelsManager();
     public static Map<String, ShiftMatrix> gShiftMatrixs = new HashMap<>();
     public static ClockMatrix gclocks = new ClockMatrix();
@@ -20,9 +23,29 @@ public class Globalvar {//存放全局变量，以及实现了数据读入
     public static Map<Integer, Pair<Double, Integer>> coTimeAndCount = new HashMap<>();
     public static ArrayList<Task> gTasks = new ArrayList<>();
     public static ShadowConfiguration bestConfig = new ShadowConfiguration();
-    public static JobsQueue jobs = new JobsQueue();
+    public static PriorityQueue<JobUnit> jobs = new PriorityQueue<JobUnit>(new Comparator<JobUnit>() {
+        @Override
+        public int compare(JobUnit o1, JobUnit o2) {
+            return o1.ioo > o2.ioo ? -1 : 1;
+        }
+    });
     public static Map<Integer, Map<Integer, Map<Integer, JobUnit>>>jop = new HashMap<>();//(model/process/jobid/job)
-    void loadgShiftMatrix(String filename){
+    public static String mqHost = "127.0.0.1";
+    public static String mqUsername;
+    public static String mqPassword;
+    public static String mqQueueName = "fits.core";
+    public static int port = 5672;
+    public static int windowPhase = 3;
+    public static int windowMaxPreFetchDays = 3;
+    public static int windowMaxDelaySeconds = 79200*3;
+    public static int workingTimePerDay = 86400;
+    public static int checkTime = 60;
+    public static int endlessLoopWaitTime = 500000;
+    public static double coSusceptibility = 1.0;
+    public static int offset = 3600;
+    String id;
+    public int isProcessDataShown = 0;
+    static void loadgShiftMatrix(String filename){
         String inString = "";
         String[] ModelIds = new String[0];
         try{
@@ -65,7 +88,7 @@ public class Globalvar {//存放全局变量，以及实现了数据读入
             System.out.println("Read file error!");
         }
     }
-    void loadModelsManager(String filename){
+    static void loadModelsManager(String filename){
         String instring = "";
         try {
             BufferedReader reader = new BufferedReader(new FileReader(new File(filename)));
@@ -87,7 +110,7 @@ public class Globalvar {//存放全局变量，以及实现了数据读入
             System.out.println("Read file error!");
         }
     }
-    void loadClockMatrix(String filename){
+    static void loadClockMatrix(String filename){
         String inString = "";
         try {
             BufferedReader reader = new BufferedReader(new FileReader(new File(filename)));
@@ -115,7 +138,7 @@ public class Globalvar {//存放全局变量，以及实现了数据读入
             System.out.println("Read file error!");
         }
     }
-    void loadProductLineMatrix(String filename){
+    static void loadProductLineMatrix(String filename){
         try {
             BufferedReader reader = new BufferedReader(new FileReader(new File(filename)));
             String jsonString = reader.readLine();
@@ -140,6 +163,7 @@ public class Globalvar {//存放全局变量，以及实现了数据读入
                         jobUnit.ioo = jbuffer.ioo;
                         jobUnit.process = jbuffer.process;
                         jobUnit.daysIndex = jbuffer.daysIndex;
+                        jobUnit.model = jbuffer.model;
                         machinetmp.inputBuffer.add(jobUnit);
                     }
                     for(Jbuffer jbuffer : jmachine.outputBuffer){
@@ -147,6 +171,7 @@ public class Globalvar {//存放全局变量，以及实现了数据读入
                         jobUnit.ioo = jbuffer.ioo;
                         jobUnit.process = jbuffer.process;
                         jobUnit.daysIndex = jbuffer.daysIndex;
+                        jobUnit.model = jbuffer.model;
                         machinetmp.outputBuffer.add(jobUnit);
                     }
                     for(Jbuffer jbuffer : jmachine.producting){
@@ -154,6 +179,7 @@ public class Globalvar {//存放全局变量，以及实现了数据读入
                         jobUnit.ioo = jbuffer.ioo;
                         jobUnit.process = jbuffer.process;
                         jobUnit.daysIndex = jbuffer.daysIndex;
+                        jobUnit.model = jbuffer.model;
                         machinetmp.model.add(jobUnit);
                     }
                     processTemp.add(machinetmp);
@@ -170,7 +196,7 @@ public class Globalvar {//存放全局变量，以及实现了数据读入
             e.printStackTrace();
         }
     }
-    void loadjobs(){
+    static void loadjobs(){
         for(ArrayList<Machine> machines : gproductLine){//将现场信息加载进jobs
             for (Machine machine : machines){
                 if(machine.getstate() != MachineRuntimeInfo.MachineState.S_ONLINE)continue;
@@ -182,14 +208,13 @@ public class Globalvar {//存放全局变量，以及实现了数据读入
                     machine.status = MachineRuntimeInfo.MachineStatus.MS_IDLE;
                 }
                 while(!inputBufferTemp.isEmpty())jobs.add(inputBufferTemp.poll());
-                while(!outputBufferTemp.isEmpty())jobs.add(inputBufferTemp.poll());
-                while(!productingTemp.isEmpty())jobs.add(inputBufferTemp.poll());
+                while(!outputBufferTemp.isEmpty())jobs.add(outputBufferTemp.poll());
+                while(!productingTemp.isEmpty())jobs.add(productingTemp.poll());
             }
         }
-        JobsQueue jobstmp = jobs;
-        int total = jobstmp.size();
-        while(!jobstmp.isEmpty()){
-            JobUnit jobtmp = jobstmp.poll();
+        //加载现场信息进jop
+        for(JobUnit jobtmp : jobs){
+            //JobUnit jobtmp = jobstmp.poll();
             int p = jobtmp.ioo < 0 ? -1 : gmodels.get(jobtmp.model).processes.get(jobtmp.ioo);
             if(!jop.containsKey(jobtmp.model))
                 jop.put(jobtmp.model, new HashMap<>());
@@ -197,6 +222,90 @@ public class Globalvar {//存放全局变量，以及实现了数据读入
                 jop.get(jobtmp.model).put(p, new HashMap<>());
             jop.get(jobtmp.model).get(p).put(jobtmp.uid,jobtmp);
         }
+        //加载现场信息进gtasks
+        Map<Integer, Integer> modelscount = new HashMap<>();//<model,count>
+        for(JobUnit jobtmp : jobs){
+            if(modelscount.containsKey(jobtmp.model)){
+                modelscount.put(jobtmp.model,modelscount.get(jobtmp.model)+1);
+            }else {
+                modelscount.put(jobtmp.model,1);
+            }
+        }
+        for(Map.Entry<Integer, Integer>e : modelscount.entrySet()){
+            gTasks.add(new Task(e.getKey(), e.getValue()));
+        }
+    }
+    static void refresh(int simulatorTime, Map<Integer, Map<Integer, Integer>> minDayIndexEachModel){//modelid/process/minIndex
+        //遍历Jop，统计model和数量
+        Map<Integer, Integer>counting = new HashMap<>();
+        for(Map.Entry<Integer, Map<Integer, Map<Integer, JobUnit>>> e : jop.entrySet()){
+            int model = e.getKey();
+            for(Map.Entry<Integer, Map<Integer, JobUnit>> e2: e.getValue().entrySet()){
+                Map<Integer, JobUnit> m = e2.getValue();
+                if(!m.isEmpty())
+                    if(counting.containsKey(model))
+                        counting.put(model, counting.get(model)+m.size());
+                    else
+                        counting.put(model, m.size());
+            }
+            Task task = find_task(model);
+            if(task != null){
+                task.count = counting.get(model);
+                if(task.count == 0)
+                    gTasks.remove(task);
+            }
+        }
+    }
+    static void parseRequirement(String filename) {
+        ArrayList<String> days = new ArrayList<>();
+        try {
+            BufferedReader reader = new BufferedReader(new FileReader(new File(filename)));
+            String instring = reader.readLine();
+            String reges = "\\d{4}/\\d{1,2}/\\d{1,2}";
+            String[] tmpstring = instring.split(",");
+            for(String day : tmpstring){
+                if(Pattern.matches(reges, day)){
+                    days.add(day);
+                }
+            }
+            Map<String, ArrayList<Integer>> mapping = new HashMap<>();
+            while((instring = reader.readLine())!=null){
+                tmpstring = instring.split(",");
+                ArrayList<Integer> tmparray = new ArrayList<>();
+                for(int i = 1; i < tmpstring.length; i ++){
+                    tmparray.add(Integer.parseInt(tmpstring[i]));
+                }
+                mapping.put(tmpstring[0], tmparray);
+            }
+            for(int i = 0; i < days.size(); i ++){
+                ArrayList<Task> tasks = new ArrayList<>();
+                for(Map.Entry<String, ArrayList<Integer>> e : mapping.entrySet()){
+                    int id = gmodels.get(e.getKey()).id;
+                    if(id < 0){
+                        System.out.println("un-supported model:"+e.getKey());
+                    }
+                    int cnt = 0;
+                    if(e.getValue().size()>i){
+                        cnt = (e.getValue().get(i)+JobUnit.CAPACITY-1)/JobUnit.CAPACITY;
+                    }
+                    Task task = new Task(i, id,cnt,days.get(i).replace("\r","\0"));
+                    task.deadline = (i + windowPhase - 1) * workingTimePerDay;//若考虑假期需要扣除部分天数
+                    tasks.add(task);
+                }
+                TaskManager.getInstance().put(days.get(i).replace("\r","\0"),tasks);
+            }
+        } catch (
+                FileNotFoundException ex) {
+            System.out.println("Can't find file:\"" + filename + "\"");
+        } catch (IOException ex) {
+            System.out.println("Read file error!");
+        }
+    }
+    static Task find_task(int model){
+        for(Task t : gTasks)
+            if(t.job.model == model)
+                return t;
+        return null;
     }
 }
 

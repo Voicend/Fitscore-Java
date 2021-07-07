@@ -1,9 +1,309 @@
 package com.example.fitscore;
 
-import java.util.ArrayList;
+import javafx.util.Pair;
 
-public class Simulator {
+import java.util.*;
+import java.math.*;
 
-    ArrayList<JobUnit> jobs;
+public class Simulator extends BaseSimulator{
+    int triggerIndex = -1;
+    ArrayList<Integer>triggerIndexVex = new ArrayList<>();
+    Map<Integer/*model*/,Map<Integer/*Process*/, Map<Integer/*jobid*/, JobUnit>>>Jop = new HashMap<>();
+    double realTime = 0;
+    double lastJobReleaseTime = 0;
+    void log(Machine m, JobUnit j){
 
+    }
+    Simulator(ProductLine pl) {
+        super(pl);
+    }
+    boolean moveJobToNextProcess(Map<Integer/*model*/,Map<Integer/*Process*/, Map<Integer/*jobid*/, JobUnit>>>Jop,
+                                 JobUnit which, Machine fromMachine, Machine toMachine, boolean finalProcess){
+        JobUnit j = new JobUnit(which);
+        if(fromMachine != null && !fromMachine.outputBuffer.isEmpty())
+            fromMachine.outputBuffer.poll();
+        int from = j.process;
+        j.machineid = toMachine != null?toMachine._index : -1;
+        if(!finalProcess && toMachine != null){
+            j.ioo += 1;
+            j.process = Globalvar.gmodels.get(j.model).processes.get(j.ioo);
+            toMachine.inputBuffer.add(j);
+            if(!Jop.containsKey(j.model))
+                Jop.put(j.model,new HashMap<>());
+            if(!Jop.get(j.model).containsKey(j.process))
+                Jop.get(j.model).put(j.process, new HashMap<>());
+            Jop.get(j.model).get(j.process).put(j.uid,j);
+        }
+        Jop.get(j.model).get(from).remove(j.uid);
+        if(Jop.get(j.model).get(-1).isEmpty()){
+            for (int i = 0; i < from; i ++)
+                if(! Jop.get(j.model).get(i).isEmpty())return false;
+            if(fromMachine != null && fromMachine.model.isEmpty()//生产位空
+            && fromMachine.outputBuffer.isEmpty()//出料口空
+            && (fromMachine.inputBuffer.isEmpty() || fromMachine.inputBuffer.peek().model != fromMachine.mode)//还有未生产的
+            ){
+                triggerIndex = fromMachine._index;
+                fromMachine.toIdle += Globalvar.offset;
+                triggerIndexVex.add(triggerIndex);
+                return true;
+            }
+        }
+        return false;
+    }
+    int simulate(){
+        ShiftBootManager psbm = ShiftBootManager.getInstance();
+        boolean working = true;
+        int count = 0;
+        while(working){
+            if(!psbm.isEmpty()){
+                ShiftBookItem sbi = psbm.poll();
+                Machine pm = ppl.get(sbi.target);
+                double extraTimeCost = 0;
+                if(pm != null){
+                    double timeCostPerUnit = pm.clock(pm.mode)*JobUnit.CAPACITY;
+                    extraTimeCost += timeCostPerUnit *(pm.inputBuffer.size()+1);
+                }
+                if(realTime+extraTimeCost >= sbi.beginTime){
+                    switch (sbi.type){
+                        case SBI_OFF:{
+                            if(pm != null)
+                                pm.setstate(MachineRuntimeInfo.MachineState.S_OFFLINE);
+                        }break;
+                        case SBI_ON:{
+                            if(pm != null)
+                                pm.setstate(MachineRuntimeInfo.MachineState.S_ONLINE);
+                        }break;
+                    }
+                    break;
+                }
+            }
+            //从最后道序开始往前遍历
+            for(int i = ppl.size() - 1; i >= 0; i --){
+                ArrayList<Machine> process = ppl.get(i);
+                for(Machine m : process){
+                    if(m.mode >= 0 && m.process == Globalvar.gmodels.get(m.mode).processes.get(0)
+                    && m.getstate() == MachineRuntimeInfo.MachineState.S_ONLINE){
+                        if(m.inputBuffer.size() < m.COB() && Jop.get(m.mode).get(-1).size()>0){
+                            for(Map.Entry<Integer, JobUnit> e1 : Jop.get(m.mode).get(-1).entrySet()){
+                                if(!m.acceptable(e1.getValue()))break;
+                                working = !moveJobToNextProcess(Jop, e1.getValue(),null, m, false);
+                                break;
+                            }
+                        }
+                    }
+                    /*
+                    当时间等于预计的机器空闲时间时查看：零件能否放到后料道，可以的话状态为0，由下一个判断语句执行
+                    不可以的话状态改为3，视为阻塞
+                     */
+                    if(m.status == MachineRuntimeInfo.MachineStatus.MS_WORKING){
+                        if(realTime >= m.toIdle){
+                            JobUnit e = m.model.peek();
+                            if(m.outputBuffer.size() < m.COB()){
+                                assert e != null;
+                                m.finishJob(e, (int)realTime);
+                                log(m,e);
+                                lastJobReleaseTime = realTime;
+                            }
+                            else {
+                                m.status = MachineRuntimeInfo.MachineStatus.MS_BLOCKING;
+                            }
+                        }
+                    }
+                    else if(m.status == MachineRuntimeInfo.MachineStatus.MS_CO){
+                        if(m.toIdle <= realTime){
+                            m.status = MachineRuntimeInfo.MachineStatus.MS_IDLE;
+                            m.mode = m.COTarget;
+                            m.COTarget = -1;
+                        }
+                    }
+                    else if(m.status == MachineRuntimeInfo.MachineStatus.MS_BLOCKING){
+                        if(m.outputBuffer.size() < m.COB()){
+                            JobUnit e = m.model.peek();
+                            Pair<Double,Double> pair = Globalvar.workAndWaitTime.get(m._index);
+                            Globalvar.workAndWaitTime.put(m._index,
+                                    new Pair<>(pair.getKey(),pair.getValue()+(realTime>m.toIdle?realTime-m.toIdle:0)));
+                            //
+                            assert e != null;
+                            m.finishJob(e, (int)realTime);
+                            log(m,e);
+                        }
+                    }
+                    else if(m.status == MachineRuntimeInfo.MachineStatus.MS_IDLE){
+                        if(m.getCOStatus() == MachineRuntimeInfo.ChangeOverStatus.COS_GOING){
+                            if(!m.inputBuffer.isEmpty()){
+                                JobUnit e = m.inputBuffer.peek();
+                                if(e.model == m.COTarget){
+                                    Pair<Double, Integer> pair = Globalvar.coTimeAndCount.get(m._index);
+                                    Globalvar.coTimeAndCount.put(m._index,
+                                            new Pair<>(pair.getKey()+Globalvar.gShiftMatrixs.get(m.name).matrix[m.mode][m.COTarget]*60,
+                                            pair.getValue()+1));
+                                    int outputTime = (int)realTime;
+                                    if(realTime - m.toIdle < Globalvar.offset)
+                                        outputTime = (int)realTime + Globalvar.offset;
+                                    //log
+                                    //startCO
+                                    m.changeOver((int)Globalvar.gShiftMatrixs.get(m.name).matrix[m.mode][m.COTarget]*60,(int)realTime);
+                                }
+                                else if(e.model == m.mode || m.generic){
+                                    //count waitTime
+                                    Pair<Double, Double>pair = Globalvar.workAndWaitTime.get(m._index);
+                                    double costTime = e.COT(m.clock(e.model));
+                                    Globalvar.workAndWaitTime.put(m._index,
+                                            new Pair<>(pair.getKey()+costTime,
+                                            pair.getValue()+realTime>m.toIdle?(realTime-m.toIdle):0));
+                                    if(realTime > m.toIdle){
+                                        //waitlog
+                                    }
+                                    m.workOn(e,(int)realTime);
+                                }
+                            }
+                            else{
+                                //count waitTime
+                                Pair<Double, Double>pair = Globalvar.workAndWaitTime.get(m._index);
+                                Globalvar.workAndWaitTime.put(m._index,
+                                        new Pair<>(pair.getKey(),
+                                                pair.getValue()+realTime>m.toIdle?(realTime-m.toIdle):0));
+                                if(realTime > m.toIdle){
+                                    //waitlog
+                                }
+                                Pair<Double,Integer>pair1 = Globalvar.coTimeAndCount.get(m._index);
+                                Globalvar.coTimeAndCount.put(m._index,
+                                        new Pair<>(pair1.getKey()+Globalvar.gShiftMatrixs.get(m.name).matrix[m.mode][m.COTarget]*60,
+                                                pair1.getValue()+1));
+                                int outputTime = (int)realTime;
+                                if(realTime-m.toIdle<Globalvar.offset)
+                                    outputTime = (int)realTime + Globalvar.offset;
+                                //log
+                                m.changeOver((int)Globalvar.gShiftMatrixs.get(m.name).matrix[m.mode][m.COTarget]*60,(int)realTime);
+                                //log
+                            }
+                        }
+                        else if(!m.inputBuffer.isEmpty()){
+                            JobUnit e = m.inputBuffer.peek();
+                            if(e.model == m.mode || m.generic){
+                                //count workTime and waitTime
+                                Pair<Double,Double> pair = Globalvar.workAndWaitTime.get(m._index);
+                                double costTime = e.COT(m.clock(e.model));
+                                Globalvar.workAndWaitTime.put(m._index,
+                                        new Pair<>(pair.getKey()+costTime,
+                                                pair.getValue()+(realTime > m.toIdle ? realTime - m.toIdle : 0)));
+                                //log
+                                m.workOn(e, (int)realTime);
+                            }
+                        }
+                    }
+                    //如果机器的后料道不为空，就尝试向下一道序运送零件，如果为最后一道序，则直接pop出来，如果无法向下运则不运
+                    if(!m.outputBuffer.isEmpty()){
+                        JobUnit e = m.outputBuffer.peek();
+                        //获取该道序后道序存在该零件的机器
+                        ArrayList<Machine> macs = new ArrayList<>();
+                        int nextProcess = m.process + 1;
+                        if(ppl.isGenericProcess(nextProcess)){
+                            for(Machine p : ppl.machines){
+                                if(p.process == m.process
+                                &&!p.outputBuffer.isEmpty())
+                                    macs.add(p);
+                            }
+                        }
+                        else{
+                            for(Machine p : ppl.machines){
+                                if(p.process == m.process
+                                && !p.outputBuffer.isEmpty()
+                                && p.outputBuffer.peek().model == e.model)
+                                    macs.add(p);
+                            }
+                        }
+                        //从macs获取零件时间最早的零件往下传
+                        //return l->outputBuffer.front().releaseTime < r->outputBuffer.front().releaseTime
+                        int min = 0;
+                        for(int idx = 1; idx < macs.size(); idx++){
+                            if(macs.get(idx).outputBuffer.peek().releaseTime<macs.get(min).outputBuffer.peek().releaseTime)
+                                min = idx;
+                        }
+                        Machine macBest = macs.get(min);
+                        JobUnit e1 = macBest.outputBuffer.peek();
+                        Models mi = Globalvar.gmodels.get(e1.model);
+                        int FINAL = mi.processes.get(process.size()-1);
+                        if(macBest.process == FINAL){
+                            working = !moveJobToNextProcess(Jop, e1, macBest, null,true);
+                            continue;
+                        }
+                        int COUNT = (int)macBest.outputBuffer.size();
+                        int tries = 0;
+                        Queue<JobUnit> push_back = new ArrayDeque<>();
+                        while(tries < COUNT){
+                            JobUnit e2 = macBest.outputBuffer.peek();
+                            //如果机器不是最后一道序查看下一道序是否是通用道序并且不是最后一道序
+                            int next = mi.processes.get(e2.ioo+1);
+                            {
+                                ArrayList<Machine>macs2 = new ArrayList<>();
+                                ProductLine ppltmp = (ProductLine)ppl.clone();
+                                for(Machine mac : ppltmp.get(next)){
+                                    if(mac.acceptable(e2)/*exclude offLineMachine*/&&
+                                    mac.getstate()!= MachineRuntimeInfo.MachineState.S_OFFLINE&&
+                                    mac.getstate()!= MachineRuntimeInfo.MachineState.S_PAUSE)
+                                        macs2.add(mac);
+                                }
+                                //选出最早空闲的机器，把零件传下去
+                                if(!macs2.isEmpty()) {
+                                    int minrelease = 0;
+                                    for (int idx = 1; idx < macs2.size(); idx++) {
+                                        if (macs2.get(idx).outputBuffer.peek().releaseTime < macs2.get(minrelease).outputBuffer.peek().releaseTime)
+                                            minrelease = idx;
+                                    }
+                                    Machine minreleasemac = macs2.get(minrelease);
+                                    working = !moveJobToNextProcess(Jop,e2,macBest,minreleasemac,false);
+                                }
+                                else if (macBest.generic){
+                                    push_back.add(e2);
+                                    macBest.outputBuffer.poll();
+                                }
+                            }
+                            if(!macBest.generic)break;
+                            tries += 1;
+                        }//end of while: if generic machine, check every job in output queue until one match or all failed
+                        if(!push_back.isEmpty()){
+                            while(!push_back.isEmpty()){
+                                macBest.outputBuffer.add(push_back.poll());
+                            }
+                        }
+                        if(tries == COUNT){
+                            //log
+                        }
+                    }
+                    if(!working)
+                        break;
+                }//end of machines in process loop
+                if(!working)
+                    break;
+            }//end of processes loop
+            realTime++;
+            count++;
+            int initialCount = Globalvar.checkTime;
+            if(initialCount==count){
+                int intervalTime = Globalvar.offset;
+                for(Machine machine : ppl.machines){
+                    if((realTime - Math.abs(machine.toIdle)>intervalTime)
+                        &&machine.status == MachineRuntimeInfo.MachineStatus.MS_IDLE
+                        &&machine.getstate()!= MachineRuntimeInfo.MachineState.S_OFFLINE)
+                        triggerIndexVex.add(machine._index);
+                }
+                if(!triggerIndexVex.isEmpty()){
+                    //log
+                    break;
+                }
+                count = 0;
+            }
+        }
+        for(Map.Entry<Integer,Map<Integer,Map<Integer,JobUnit>>>e : Jop.entrySet()){
+            for(Map.Entry<Integer,Map<Integer,JobUnit>>e1:e.getValue().entrySet()){
+                for(Map.Entry<Integer,JobUnit>e2:e1.getValue().entrySet()){
+                    if(e2.getValue().machineid >= 0)
+                        continue;
+                    jobs.add(e2.getValue());
+                }
+            }
+        }
+        return 0;
+    }
 }

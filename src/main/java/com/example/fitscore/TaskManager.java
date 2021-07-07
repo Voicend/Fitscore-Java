@@ -1,6 +1,7 @@
 package com.example.fitscore;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.PriorityQueue;
 
@@ -8,8 +9,8 @@ public class TaskManager {
     private static final TaskManager instance = new TaskManager();
     private TaskManager(){};
     public static TaskManager getInstance(){return instance;}
-    Map<String, ArrayList<Task>> tasks;//日期任务表
-    Map<Integer, ArrayList<Task>> indexer;//索引任务表
+    Map<String, ArrayList<Task>> tasks = new HashMap<>();//日期任务表
+    Map<Integer, ArrayList<Task>> indexer = new HashMap<>();//索引任务表
     int progress = 0; // 当前进展到哪天
     void put(String date, ArrayList<Task>ttasks){
         tasks.put(date, ttasks);

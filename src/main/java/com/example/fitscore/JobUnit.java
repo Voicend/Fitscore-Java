@@ -15,4 +15,16 @@ public class JobUnit extends JobUnitInfo{
     int machineid = -1;
     int daysIndex = 0;
     String taskinfodate;
+    JobUnit(){}
+    JobUnit(JobUnit jobUnit){
+        this.process = jobUnit.process;
+        this.machineid = jobUnit.machineid;
+        this.model = jobUnit.model;
+        this.uid = jobUnit.uid;
+        this.ioo = jobUnit.ioo;
+        this.state = jobUnit.state;
+        this.daysIndex = jobUnit.daysIndex;
+        this.taskinfodate = jobUnit.taskinfodate;
+        this.releaseTime = jobUnit.releaseTime;
+    }
 }

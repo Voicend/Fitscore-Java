@@ -57,5 +57,7 @@ public class Machine extends MachineRuntimeInfo{
     }
     //判断是否停机
     boolean isMachineOnLine(){return(getstate() != MachineState.S_OFFLINE && getstate() != MachineState.S_PAUSE);}
-
+    void setstate(MachineState state){
+        this.state = state;
+    }
 }

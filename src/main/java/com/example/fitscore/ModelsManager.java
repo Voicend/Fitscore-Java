@@ -1,6 +1,8 @@
 package com.example.fitscore;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
 public class ModelsManager extends ArrayList<Models>{
     private static final ModelsManager instance = new ModelsManager();
