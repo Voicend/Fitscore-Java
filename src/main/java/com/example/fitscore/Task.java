@@ -1,6 +1,8 @@
 package com.example.fitscore;
 
-public class Task {
+import java.io.Serializable;
+
+public class Task implements Serializable {
     int count;
     int IOD;//index of day
     String date;

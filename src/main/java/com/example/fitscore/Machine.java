@@ -2,11 +2,13 @@ package com.example.fitscore;
 import javafx.util.Pair;
 
 import javax.crypto.Mac;
+import java.io.*;
 import java.util.ArrayDeque;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Queue;
 
-public class Machine extends MachineRuntimeInfo{
+public class Machine extends MachineRuntimeInfo implements Serializable{
     int process = 0;
     int _index = -1;//global index
     String number, name;
@@ -17,11 +19,18 @@ public class Machine extends MachineRuntimeInfo{
     Queue<JobUnit> outputBuffer = new ArrayDeque<>();
     Queue<JobUnit> model = new ArrayDeque<>();
     String fullname(){return name;}
-    Map<Integer, Map<Integer, Double>> calculatedTickMatrix;
+    Map<Integer, Map<Integer, Double>> calculatedTickMatrix = new HashMap<>();
     double clock(int modelId){//获取该机器生产modelId的节拍
-        double value = calculatedTickMatrix.get(_index).get(modelId);
-        if(value > 0)return value;
-        if(clocks.containsValue(value))return value;
+        if(!calculatedTickMatrix.containsKey(_index))
+            calculatedTickMatrix.put(_index,new HashMap<>());
+        if(calculatedTickMatrix.get(_index).containsKey(modelId)){
+            double value = calculatedTickMatrix.get(_index).get(modelId);
+            if(value > 0)return value;
+        }
+        if(clocks.containsKey(modelId)) {
+            calculatedTickMatrix.get(_index).put(modelId,clocks.get(modelId));
+            return clocks.get(modelId);
+        }
         return -1;
     }
     boolean support(int model){return generic||(clock(model)==0);}//机器是否能够生产model型号

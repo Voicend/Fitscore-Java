@@ -3,11 +3,12 @@ package com.example.fitscore;
 import javafx.util.Pair;
 
 import javax.crypto.Mac;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
-public class ProductLine extends ArrayList<ArrayList<Machine>>{
+public class ProductLine extends ArrayList<ArrayList<Machine>> implements Serializable{
     //一个道序的设备集合
     //N个道序组成产线
     //唯一存放machines信息的地方
@@ -103,16 +104,18 @@ public class ProductLine extends ArrayList<ArrayList<Machine>>{
             }
             for(Machine machine : process){
                 if(machine.COTarget == modelId && machine.COTarget != machine.mode && machine.isMachineOnLine()){
+                    int x = ShiftMatrix.id2index.get(machine.mode);
+                    int y = ShiftMatrix.id2index.get(modelId);
                     if(machine.toIdle < realTime)
-                        COTable.put(realTime+(int)Globalvar.gShiftMatrixs.get(machine.name).matrix[machine.mode][modelId]*60,machine._index);
+                        COTable.put(realTime+(int)Globalvar.gShiftMatrixs.get(machine.name).matrix[x][y]*60,machine._index);
                     else
-                        COTable.put((int)machine.toIdle+(int)Globalvar.gShiftMatrixs.get(machine.name).matrix[machine.mode][modelId]*60,machine._index);
+                        COTable.put((int)machine.toIdle+(int)Globalvar.gShiftMatrixs.get(machine.name).matrix[x][y]*60,machine._index);
                 }
             }
             processIndex++;
         }
         int lastTimePoint = realTime;
-        ProductLine productLineTemp = (ProductLine)this.clone();
+        ProductLine productLineTemp = this.myclone();
         double capacity = productLineTemp.getCapacityInProcess(modelId, _process);
         double finishedModels = 0;
         for(Map.Entry<Integer,Integer>e:COTable.entrySet()){
@@ -124,5 +127,88 @@ public class ProductLine extends ArrayList<ArrayList<Machine>>{
         finishedModels += (deadLine - lastTimePoint) * capacity;
         return finishedModels / JobUnitInfo.CAPACITY;
     }
-
+    ArrayList<Integer> getLowestCapacityProcesses(int modelId){
+        ProductLine productLineTemp = this.myclone();
+        ArrayList<Integer>minCapacityProcesses = new ArrayList<>();
+        double minCapacity = Double.MIN_NORMAL;
+        for(int process : Globalvar.gmodels.get(modelId).processes){
+            if(productLineTemp.isGenericProcess(process))
+                continue;
+            double PiecePerSecond = 0;
+            for(Machine machine:productLineTemp.get(process)){
+                if(machine.mode == modelId && machine.isMachineOnLine())
+                    PiecePerSecond += 1.0/machine.clock(modelId);
+            }
+            if(PiecePerSecond < minCapacity)
+                minCapacity = PiecePerSecond;
+        }
+        for(int process : Globalvar.gmodels.get(modelId).processes){
+            if(productLineTemp.isGenericProcess(process))
+                continue;
+            double PiecesPerSecond = 0;
+            for(Machine machine : productLineTemp.get(process)){
+                if((machine.mode == modelId || machine.COTarget == modelId)
+                    &&machine.isMachineOnLine())
+                    PiecesPerSecond += 1.0/machine.clock(modelId);
+            }
+            if(PiecesPerSecond == minCapacity)
+                minCapacityProcesses.add(process);
+        }
+        return minCapacityProcesses;
+    }
+    void setCapacitySurplusMachineOffLine(){
+        for(ArrayList<Machine>machines : this){
+            for(Machine machine : machines){
+                if(machine.generic||machine.getstate()== MachineRuntimeInfo.MachineState.S_OFFLINE)
+                    continue;
+                ArrayList<Integer>capacityVec = this.getLowestCapacityProcesses(machine.mode);
+                if(!capacityVec.contains(machine.process)){
+                    ProductLine productLineTemp = this.myclone();
+                    for(ArrayList<Machine> e : productLineTemp){
+                        for (Machine machinetmp : e){
+                            if(machinetmp._index == machine._index) {
+                                machinetmp.mode = -1;
+                            }
+                        }
+                    }
+                    ArrayList<Integer>capacityVec2 = productLineTemp.getLowestCapacityProcesses(machine.mode);
+                    if(!capacityVec2.contains(machine.process)){
+                        System.out.println("machine_index:"+machine._index);
+                    }
+                }
+            }
+        }
+    }
+    boolean judgeCapacityOverLastProcess(int machineProcess, int mode){
+        int processIndex = 0;
+        for(int index = 0; index < Globalvar.gmodels.get(mode).processes.size(); index++){
+            if(Globalvar.gmodels.get(mode).processes.get(index) == machineProcess){
+                processIndex = index - 1;
+                boolean isProcessGeneric = Globalvar.gproductLine.isGenericProcess(processIndex);
+                if(isProcessGeneric)
+                    processIndex --;
+                break;
+            }
+        }
+        if(processIndex < 0)
+            return false;
+        int lastProcess = Globalvar.gmodels.get(mode).processes.get(processIndex);
+        double capacityInProcess = Globalvar.gproductLine.getCapacityInProcess(mode,machineProcess);
+        double capacityInLastProcess = Globalvar.gproductLine.getCapacityInProcess(mode, lastProcess);
+        return capacityInProcess > capacityInLastProcess;
+    }
+    public ProductLine myclone() {
+        ProductLine stu = null;
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ObjectOutputStream oos = new ObjectOutputStream(baos);
+            oos.writeObject(this);
+            ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+            ObjectInputStream ois = new ObjectInputStream(bais);
+            stu = (ProductLine) ois.readObject();
+        } catch (IOException | ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+        return stu;
+    }
 }

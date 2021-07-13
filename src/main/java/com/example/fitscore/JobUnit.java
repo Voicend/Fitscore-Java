@@ -1,6 +1,8 @@
 package com.example.fitscore;
 
-public class JobUnit extends JobUnitInfo{
+import java.io.Serializable;
+
+public class JobUnit extends JobUnitInfo implements Serializable {
     enum State {
         JUS_UNSET,
         JUS_WAITING,	//在进料道
