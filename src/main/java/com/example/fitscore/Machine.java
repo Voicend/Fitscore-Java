@@ -33,7 +33,7 @@ public class Machine extends MachineRuntimeInfo implements Serializable{
         }
         return -1;
     }
-    boolean support(int model){return generic||(clock(model)==0);}//机器是否能够生产model型号
+    boolean support(int model){return generic||(clock(model)>=0);}//机器是否能够生产model型号
     boolean acceptable(JobUnit job){
         if(inputBuffer.size() >= COB())return false;
         else if (super.acceptable(job))return true;
@@ -51,7 +51,7 @@ public class Machine extends MachineRuntimeInfo implements Serializable{
     //执行换型
     int changeOver(int cost, int now){
         status = MachineStatus.MS_CO;
-        setCOStatus(ChangeOverStatus.COS_KEEP);
+        setCOStatus(0);
         toIdle = now + cost;
         return 0;
     }

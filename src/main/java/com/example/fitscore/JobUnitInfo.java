@@ -1,6 +1,8 @@
 package com.example.fitscore;
 
-public class JobUnitInfo {
+import java.io.Serializable;
+
+public class JobUnitInfo implements Serializable {
     static int CAPACITY = 48;
     int uid;
     int model;

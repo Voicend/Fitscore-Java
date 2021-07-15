@@ -56,6 +56,7 @@ public class TaskManager {
                     Globalvar.jop.get(e.model).put(p,new HashMap<>());
                 Globalvar.jop.get(e.model).get(p).put(e.uid,e);
             }
+            System.out.printf("Loaded day %s to gTasks(jobs)! \n", tasksofoneday.isEmpty() ? "NaD" : tasksofoneday.get(0).date);
             result += 1;
             progress += 1;
             countofdays-=1;

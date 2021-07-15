@@ -16,15 +16,14 @@ public class Simulator extends BaseSimulator{
     double lastJobReleaseTime = 0;
     void log(Machine m, JobUnit j){
         String s = m.process+","+m._index+","+m.name+"_"+m.number+","+Globalvar.gmodels.get(j.model).name+","
-                +realTime+","+j.COT(m.clock(j.model))+","+j.taskinfodate+","+j.uid+","+(int)realTime/86400;
+                +realTime+","+(int)j.COT(m.clock(j.model))+","+j.taskinfodate+","+j.uid+","+(int)realTime/86400;
         System.out.println(s);
     }
     Simulator(ProductLine pl) {
         super(pl);
     }
     boolean moveJobToNextProcess(Map<Integer/*model*/,Map<Integer/*Process*/, Map<Integer/*jobid*/, JobUnit>>>Jop,
-                                 JobUnit which, Machine fromMachine, Machine toMachine, boolean finalProcess){
-        JobUnit j = new JobUnit(which);
+                                 JobUnit j, Machine fromMachine, Machine toMachine, boolean finalProcess){
         if(fromMachine != null && !fromMachine.outputBuffer.isEmpty())
             fromMachine.outputBuffer.poll();
         int from = j.process;
@@ -40,6 +39,7 @@ public class Simulator extends BaseSimulator{
             Jop.get(j.model).get(j.process).put(j.uid,j);
         }
         Jop.get(j.model).get(from).remove(j.uid);
+//System.out.println("finish"+j.uid+" at "+this.realTime);
         if(Jop.get(j.model).containsKey(-1)&&Jop.get(j.model).get(-1).isEmpty()){
             for (int i = 0; i < from; i ++)
                 if(! Jop.get(j.model).get(i).isEmpty())return false;
@@ -55,8 +55,25 @@ public class Simulator extends BaseSimulator{
         }
         return false;
     }
+    void log_on_machine_status_change(Machine m){
+        if(Globalvar.isProcessDataShown == 1){
+            String s = realTime + "," + m._index+ "," +m.name+ "-" +m.number+ "," +
+                    m.process+ "," +m.status+ "," +m.inputBuffer.size()+ "," +m.outputBuffer.size()
+                    + "," +Globalvar.gmodels.get(m.mode).name+"\n";
+            System.out.print(s);
+        }
+        if(m.status == MachineRuntimeInfo.MachineStatus.MS_CO){
+            int deviatedRealTime = 0;
+            if (realTime - m.toIdle < Globalvar.offset) {
+                deviatedRealTime = (int)realTime + Globalvar.offset;
+                m.toIdle += Globalvar.offset;
+            }
+            else {
+                deviatedRealTime = (int)realTime;
+            }
+        }
+    }
     int simulate(){
-
         ShiftBootManager psbm = ShiftBootManager.getInstance();
         boolean working = true;
         int count = 0;
@@ -87,9 +104,12 @@ public class Simulator extends BaseSimulator{
             for(int i = ppl.size() - 1; i >= 0; i --){
                 ArrayList<Machine> process = ppl.get(i);
                 for(Machine m : process){
+                    //如果机器为第一道序则在机器前buffer不满的情况下补满buffer
                     if(m.mode >= 0 && m.process == Globalvar.gmodels.get(m.mode).processes.get(0)
                     && m.getstate() == MachineRuntimeInfo.MachineState.S_ONLINE){
-                        if(m.inputBuffer.size() < m.COB() && Jop.containsKey(m.mode)&&Jop.get(m.mode).containsKey(-1)&& Jop.get(m.mode).get(-1).size()>0){
+                        if(!Jop.get(m.mode).containsKey(-1))
+                            Jop.get(m.mode).put(-1,new HashMap<>());
+                        if(m.inputBuffer.size() < m.COB() && Jop.get(m.mode).get(-1).size()>0){
                             for(Map.Entry<Integer, JobUnit> e1 : Jop.get(m.mode).get(-1).entrySet()){
                                 if(!m.acceptable(e1.getValue()))break;
                                 working = !moveJobToNextProcess(Jop, e1.getValue(),null, m, false);
@@ -108,18 +128,22 @@ public class Simulator extends BaseSimulator{
                                 assert e != null;
                                 m.finishJob(e, (int)realTime);
                                 log(m,e);
+                                log_on_machine_status_change(m);
                                 lastJobReleaseTime = realTime;
                             }
                             else {
                                 m.status = MachineRuntimeInfo.MachineStatus.MS_BLOCKING;
+                                log_on_machine_status_change(m);
                             }
                         }
                     }
                     else if(m.status == MachineRuntimeInfo.MachineStatus.MS_CO){
                         if(m.toIdle <= realTime){
                             m.status = MachineRuntimeInfo.MachineStatus.MS_IDLE;
+//System.out.println(m.fullname()+" C/0 DONE from " + m.mode + "->" + m.COTarget + " width input: "+m.inputBuffer.size());
                             m.mode = m.COTarget;
                             m.COTarget = -1;
+                            log_on_machine_status_change(m);
                         }
                     }
                     else if(m.status == MachineRuntimeInfo.MachineStatus.MS_BLOCKING){
@@ -134,10 +158,11 @@ public class Simulator extends BaseSimulator{
                             assert e != null;
                             m.finishJob(e, (int)realTime);
 //                            log(m,e);
+                            log_on_machine_status_change(m);
                         }
                     }
                     else if(m.status == MachineRuntimeInfo.MachineStatus.MS_IDLE){
-                        if(m.getCOStatus() == MachineRuntimeInfo.ChangeOverStatus.COS_GOING){
+                        if(m.getCOStatus() == 1){
                             if(!m.inputBuffer.isEmpty()){
                                 JobUnit e = m.inputBuffer.peek();
                                 if(e.model == m.COTarget){
@@ -153,6 +178,7 @@ public class Simulator extends BaseSimulator{
                                     //log
                                     //startCO
                                     m.changeOver((int)Globalvar.gShiftMatrixs.get(m.name).matrix[x][y]*60,(int)realTime);
+                                    log_on_machine_status_change(m);
                                 }
                                 else if(e.model == m.mode || m.generic){
                                     //count waitTime
@@ -165,10 +191,13 @@ public class Simulator extends BaseSimulator{
                                         //waitlog
                                     }
                                     m.workOn(e,(int)realTime);
+                                    log_on_machine_status_change(m);
                                 }
                             }
                             else{
                                 //count waitTime
+                                if(!Globalvar.workAndWaitTime.containsKey(m._index))
+                                    Globalvar.workAndWaitTime.put(m._index,new Pair<>(0.0,0.0));
                                 Pair<Double, Double>pair = Globalvar.workAndWaitTime.get(m._index);
                                 Globalvar.workAndWaitTime.put(m._index,
                                         new Pair<>(pair.getKey(),
@@ -178,7 +207,7 @@ public class Simulator extends BaseSimulator{
                                 }
                                 int x = ShiftMatrix.id2index.get(m.mode);
                                 int y = ShiftMatrix.id2index.get(m.COTarget);
-                                Pair<Double,Integer>pair1 = Globalvar.coTimeAndCount.get(m._index);
+                                Pair<Double,Integer>pair1 = Globalvar.coTimeAndCount.containsKey(m._index)?Globalvar.coTimeAndCount.get(m._index):new Pair<>(0.0,0);
                                 Globalvar.coTimeAndCount.put(m._index,
                                         new Pair<>(pair1.getKey()+Globalvar.gShiftMatrixs.get(m.name).matrix[x][y]*60,
                                                 pair1.getValue()+1));
@@ -187,6 +216,7 @@ public class Simulator extends BaseSimulator{
                                     outputTime = (int)realTime + Globalvar.offset;
                                 //log
                                 m.changeOver((int)Globalvar.gShiftMatrixs.get(m.name).matrix[x][y]*60,(int)realTime);
+                                log_on_machine_status_change(m);
                                 //log
                             }
                         }
@@ -208,6 +238,7 @@ public class Simulator extends BaseSimulator{
                                         new Pair<>(key+costTime,
                                                 value+(realTime > m.toIdle ? realTime - m.toIdle : 0)));
                                 //log
+                                log_on_machine_status_change(m);
                                 m.workOn(e, (int)realTime);
                             }
                         }
@@ -269,7 +300,7 @@ public class Simulator extends BaseSimulator{
                                 double minreleasetime = Double.MAX_VALUE;
                                 for(Machine machine:macs2){
                                     double machinereleasetime = machine.toIdle;
-                                    if(machine.getCOStatus()== MachineRuntimeInfo.ChangeOverStatus.COS_GOING
+                                    if(machine.getCOStatus()== 1
                                     ||machine.status == MachineRuntimeInfo.MachineStatus.MS_CO)
                                         machinereleasetime += Globalvar.gShiftMatrixs.get(machine.name).matrix
                                                 [ShiftMatrix.id2index.get(machine.mode)]
@@ -279,8 +310,9 @@ public class Simulator extends BaseSimulator{
                                         minreleasemac = machine;
                                     }
                                 }
-                                if(!macs2.isEmpty())
+                                if(!macs2.isEmpty()){
                                     working = !moveJobToNextProcess(Jop,e2,macBest,minreleasemac,false);
+                                }
                                 else if (macBest.generic){
                                     push_back.add(e2);
                                     macBest.outputBuffer.poll();
@@ -337,7 +369,7 @@ public class Simulator extends BaseSimulator{
         for(Map.Entry<Integer,Integer>e:configs.entrySet()){
             Machine pm = ppl.machines.get(e.getKey());
             if(pm.mode < 0)pm.mode = e.getValue();
-            else if(pm.getCOStatus() == MachineRuntimeInfo.ChangeOverStatus.COS_GOING)
+            else if(pm.getCOStatus() == 1)
             {
                 //已经准备换型的暂不参与规划
                 //log
@@ -348,7 +380,7 @@ public class Simulator extends BaseSimulator{
             }
             else if(pm.status!= MachineRuntimeInfo.MachineStatus.MS_CO
                     &&pm.mode != e.getValue()){
-                pm.setCOStatus(MachineRuntimeInfo.ChangeOverStatus.COS_GOING);
+                pm.setCOStatus(1);
                 pm.COTarget = e.getValue();
             }
         }

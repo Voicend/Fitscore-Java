@@ -130,7 +130,7 @@ public class ProductLine extends ArrayList<ArrayList<Machine>> implements Serial
     ArrayList<Integer> getLowestCapacityProcesses(int modelId){
         ProductLine productLineTemp = this.myclone();
         ArrayList<Integer>minCapacityProcesses = new ArrayList<>();
-        double minCapacity = Double.MIN_NORMAL;
+        double minCapacity = Double.MAX_VALUE;
         for(int process : Globalvar.gmodels.get(modelId).processes){
             if(productLineTemp.isGenericProcess(process))
                 continue;
@@ -161,7 +161,7 @@ public class ProductLine extends ArrayList<ArrayList<Machine>> implements Serial
             for(Machine machine : machines){
                 if(machine.generic||machine.getstate()== MachineRuntimeInfo.MachineState.S_OFFLINE)
                     continue;
-                ArrayList<Integer>capacityVec = this.getLowestCapacityProcesses(machine.mode);
+                ArrayList<Integer>capacityVec = this.myclone().getLowestCapacityProcesses(machine.mode);
                 if(!capacityVec.contains(machine.process)){
                     ProductLine productLineTemp = this.myclone();
                     for(ArrayList<Machine> e : productLineTemp){

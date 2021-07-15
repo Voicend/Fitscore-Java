@@ -20,7 +20,8 @@ public class Globalvar {//存放全局变量，以及数据读入
     public static Map<Integer, Pair<Double, Integer>> coTimeAndCount = new HashMap<>();
     public static ArrayList<Task> gTasks = new ArrayList<>();
     public static ShadowConfiguration bestConfig = new ShadowConfiguration();
-    public static PriorityQueue<JobUnit> jobs = new PriorityQueue<JobUnit>((o1, o2) -> o1.releaseTime < o2.releaseTime ? -1 : 1);
+    public static PriorityQueue<JobUnit> jobs = new PriorityQueue<JobUnit>((o1, o2) -> o1.releaseTime > o2.releaseTime ? -1 : 1);
+    //public static Queue<JobUnit>jobs = new ArrayDeque<>();
     public static Map<Integer, Map<Integer, Map<Integer, JobUnit>>>jop = new HashMap<>();//(model/process/jobid/job)
     public static String mqHost = "127.0.0.1";
     public static String mqUsername;
@@ -32,12 +33,11 @@ public class Globalvar {//存放全局变量，以及数据读入
     public static int windowMaxDelaySeconds = 79200*3;
     public static int workingTimePerDay = 86400;
     public static int checkTime = 60;
-    public static int endlessLoopWaitTime = 500000;
+    public static int endlessLoopWaitTime = 50000;
     public static double coSusceptibility = 1.0;
     public static int offset = 3600;
     public static int uid = 0;
-    String id;
-    public int isProcessDataShown = 0;
+    public static int isProcessDataShown = 0;
     static void loadgShiftMatrix(String filename){
         String inString = "";
         String[] ModelIds = new String[0];
@@ -323,12 +323,12 @@ public class Globalvar {//存放全局变量，以及数据读入
             }
             Task task = find_task(model);
             if(task != null){
-                if(model<counting.size())
-                    task.count = counting.get(model);
+                task.count = counting.getOrDefault(model, 0);
                 if(task.count == 0)
                     gTasks.remove(task);
             }
         }
+        //保证gTask中有两天的任务
         Map<String,Integer>countofdays = new HashMap<>();
         ArrayList<Task>tasks = new ArrayList<>(gTasks);
         do{
@@ -357,6 +357,7 @@ public class Globalvar {//存放全局变量，以及数据读入
                         if(minDayIndexEachModel.get(e3.getValue().model).containsKey(e3.getValue().process)
                         &&minDayIndexEachModel.get(e3.getValue().model).get(e3.getValue().process)<daysIndex)
                             daysIndex = minDayIndexEachModel.get(e3.getValue().model).get(e3.getValue().process);
+                        minDayIndexEachModel.get(e3.getValue().model).put(e3.getValue().process,daysIndex);
                         testDayWindow.put(e3.getValue().daysIndex,1);
                     }
                 }
@@ -378,6 +379,21 @@ public class Globalvar {//存放全局变量，以及数据读入
                     countofdays.put(e.date,countofdays.get(e.date)+1);
             }
         }while(tasks.size()!=0);
+        for(Task e : tasks){
+            boolean find = false;
+            Task tmp = null;
+            for(Task t : gTasks){
+                if(t.job.model==e.job.model){
+                    find = true;
+                    tmp = t;
+                }
+            }
+            if(find){
+                tmp.count += e.count;
+                tmp.deadline = Math.max(e.deadline,tmp.deadline);
+            }
+            else gTasks.add(e);
+        }
     }
 
     static void parseRequirement(String filename) {
@@ -430,6 +446,37 @@ public class Globalvar {//存放全局变量，以及数据读入
             if(t.job.model == model)
                 return t;
         return null;
+    }
+    public static void printjop(Map<Integer, Map<Integer, Map<Integer, JobUnit>>>jop){
+        System.out.println("---------------------------------------------------");
+        for(Map.Entry<Integer,Map<Integer,Map<Integer,JobUnit>>> e : jop.entrySet()){
+            System.out.printf("%d\n",e.getKey());
+            for(Map.Entry<Integer,Map<Integer,JobUnit>> e2:e.getValue().entrySet()){
+                System.out.printf("%d:",e2.getKey());
+                int a3=0, a4=0;
+                for(Map.Entry<Integer,JobUnit> e3:e2.getValue().entrySet()){
+                    if(e3.getValue().daysIndex==0)a3++;
+                    else a4++;
+                }
+                System.out.printf("(%d,%d)\n",a3,a4);
+            }
+        }
+    }
+    public static void printtasks(ArrayList<Task> tasks){
+        for(Task t:tasks){
+            System.out.printf("(%d,%d)",t.job.model,t.count);
+        }
+        System.out.print("\n");
+    }
+    public static void printjopcount(Simulator simulator, Map<Integer, Map<Integer, Map<Integer, JobUnit>>>jop){
+        System.out.printf("%d----------------------------------------------------------\n",(int)simulator.realTime);
+        for(Map.Entry<Integer,Map<Integer,Map<Integer,JobUnit>>>e:jop.entrySet()){
+            System.out.printf("%d:",e.getKey());
+            for(Map.Entry<Integer,Map<Integer,JobUnit>>e2:e.getValue().entrySet()){
+                System.out.printf("(%d,%d)",e2.getKey(),e2.getValue().size());
+            }
+            System.out.print("\n");
+        }
     }
     static Pair<Integer, Integer> getMostSuitableCOMachineInMachines2(
             ArrayList<Integer>triggerIndexVec,int realTime,
@@ -496,7 +543,7 @@ public class Globalvar {//存放全局变量，以及数据读入
                 double CountToFinishBeforeDeadLineForAllforToMode = gproductLine.CountToFinishBeforeDeadLineInCertainProcess(minDeadLineForAllForToMode, realTime, COTomode, machineProcess);
                 double CountToFinishBeforeDeadLineForAllforFromMode = gproductLine.CountToFinishBeforeDeadLineInCertainProcess(minDeadLineForAllForFromMode, realTime, originalMode, machineProcess);
                 //换型之后的产能预估
-                ProductLine productLineTemp = (ProductLine) gproductLine.clone();
+                ProductLine productLineTemp = gproductLine;
                 for(ArrayList<Machine> process:productLineTemp){
                     for(Machine machine:process){
                         if(machine._index==triggerIndex){
@@ -539,7 +586,7 @@ public class Globalvar {//存放全局变量，以及数据读入
                         int processIndex = 0;
                         int lastBufferProcess = 0;
                         for(int index = 0; index < gmodels.get(COTomode).processes.size();index++){
-                            if(gmodels.get(COMode).processes.get(index) == machineProcess){
+                            if(gmodels.get(COTomode).processes.get(index) == machineProcess){
                                 processIndex = index - 1;
                                 lastBufferProcess = index - 1;
                                 boolean isProcessGeneric = gproductLine.isGenericProcess(processIndex);
@@ -557,8 +604,7 @@ public class Globalvar {//存放全局变量，以及数据读入
                         }
                         //检验是否会出现前道序后料道零件因为临时开工所以与该道序机器不匹配
                         for(Machine machine:gproductLine.get(lastBufferProcess)){
-                            Queue<JobUnit> bufferTest = new JobsQueue();
-                            bufferTest.addAll(machine.outputBuffer);
+                            Queue<JobUnit> bufferTest = new ArrayDeque<>(machine.outputBuffer);
                             while(!bufferTest.isEmpty()){
                                 JobUnit jobTest = bufferTest.poll();
                                 if(jobTest.model == COTomode){
@@ -576,8 +622,8 @@ public class Globalvar {//存放全局变量，以及数据读入
                     }
                 }
                 if(diffPercentage < -0.1 && ((diffPercentage < minDiff
-                        && CountToFinishBeforeDeadLineForAllForTFromModeAfterCO - CountToFinishBeforeDeadLineForAllforToMode > 10)
-                        ||(offsetPercentageForFromModeAfterCo > 0.9))){
+                        && CountToFinishBeforeDeadLineForAllForToModeAfterCO - CountToFinishBeforeDeadLineForAllforToMode > 10)
+                        ||(offsetPercentageForToModeBeforeCO > 0.9))){
                     finalMachineIndex = triggerIndex;
                     COMode = COTomode;
                     minDiff = diffPercentage;

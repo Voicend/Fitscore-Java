@@ -41,7 +41,6 @@ public class FitsCoreApplication {
         while(!Globalvar.gTasks.isEmpty()){
             triggerIndexVec = simulator.triggerIndexVex;
             Pair<Integer, Integer> COInfo = Globalvar.getMostSuitableCOMachineInMachines2(triggerIndexVec,(int)simulator.realTime,minDayIndexEachModel);
-            //test;
             if(COInfo.getKey()!=-1){
                 config = new HashMap<>();
                 config.put(COInfo.getKey(),COInfo.getValue());
@@ -64,6 +63,7 @@ public class FitsCoreApplication {
             }
             Globalvar.jobs = simulator.jobs;
             Globalvar.jop = simulator.Jop;
+
             triggerIndexVec = simulator.triggerIndexVex;
             //触发重新枚举前，对每一个机器的状态信息，jobs状态信息和需要传入逐秒仿真的信息进行更新
             Globalvar.refresh((int)simulator.realTime,minDayIndexEachModel);
