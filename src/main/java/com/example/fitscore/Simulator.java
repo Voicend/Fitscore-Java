@@ -39,7 +39,6 @@ public class Simulator extends BaseSimulator{
             Jop.get(j.model).get(j.process).put(j.uid,j);
         }
         Jop.get(j.model).get(from).remove(j.uid);
-//System.out.println("finish"+j.uid+" at "+this.realTime);
         if(Jop.get(j.model).containsKey(-1)&&Jop.get(j.model).get(-1).isEmpty()){
             for (int i = 0; i < from; i ++)
                 if(! Jop.get(j.model).get(i).isEmpty())return false;
@@ -112,7 +111,6 @@ public class Simulator extends BaseSimulator{
                         if(m.inputBuffer.size() < m.COB() && Jop.get(m.mode).get(-1).size()>0){
                             for(Map.Entry<Integer, JobUnit> e1 : Jop.get(m.mode).get(-1).entrySet()){
                                 if(!m.acceptable(e1.getValue()))break;
-//System.out.printf("1    :deal with job : %d\n",e1.getValue().uid);
                                 working = !moveJobToNextProcess(Jop, e1.getValue(),null, m, false);
                                 break;
                             }
@@ -277,7 +275,6 @@ System.out.println(m.fullname()+" C/0 DONE from " + m.mode + "->" + m.COTarget +
                         Models mi = Globalvar.gmodels.get(e1.model);
                         int FINAL = mi.processes.get(mi.processes.size()-1);
                         if(macBest.process == FINAL){
-//System.out.printf("2    :deal with job : %d\n",e1.uid);
                             working = !moveJobToNextProcess(Jop, e1, macBest, null,true);
                             continue;
                         }
@@ -313,7 +310,6 @@ System.out.println(m.fullname()+" C/0 DONE from " + m.mode + "->" + m.COTarget +
                                     }
                                 }
                                 if(!macs2.isEmpty()){
-//System.out.printf("3    :deal with job : %d\n",e2.uid);
                                     working = !moveJobToNextProcess(Jop,e2,macBest,minreleasemac,false);
                                     break;
                                 }
