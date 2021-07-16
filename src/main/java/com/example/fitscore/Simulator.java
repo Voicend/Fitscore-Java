@@ -11,7 +11,7 @@ import java.math.*;
 public class Simulator extends BaseSimulator{
     int triggerIndex = -1;
     ArrayList<Integer>triggerIndexVex = new ArrayList<>();
-    Map<Integer/*model*/,Map<Integer/*Process*/, Map<Integer/*jobid*/, JobUnit>>>Jop = new HashMap<>();
+    Map<Integer/*model*/,Map<Integer/*Process*/, Map<Integer/*jobid*/, JobUnit>>>Jop = new TreeMap<>();
     double realTime = 0;
     double lastJobReleaseTime = 0;
     void log(Machine m, JobUnit j){
@@ -33,9 +33,9 @@ public class Simulator extends BaseSimulator{
             j.process = Globalvar.gmodels.get(j.model).processes.get(j.ioo);
             toMachine.inputBuffer.add(j);
             if(!Jop.containsKey(j.model))
-                Jop.put(j.model,new HashMap<>());
+                Jop.put(j.model,new TreeMap<>());
             if(!Jop.get(j.model).containsKey(j.process))
-                Jop.get(j.model).put(j.process, new HashMap<>());
+                Jop.get(j.model).put(j.process, new TreeMap<>());
             Jop.get(j.model).get(j.process).put(j.uid,j);
         }
         Jop.get(j.model).get(from).remove(j.uid);
@@ -108,10 +108,11 @@ public class Simulator extends BaseSimulator{
                     if(m.mode >= 0 && m.process == Globalvar.gmodels.get(m.mode).processes.get(0)
                     && m.getstate() == MachineRuntimeInfo.MachineState.S_ONLINE){
                         if(!Jop.get(m.mode).containsKey(-1))
-                            Jop.get(m.mode).put(-1,new HashMap<>());
+                            Jop.get(m.mode).put(-1,new TreeMap<>());
                         if(m.inputBuffer.size() < m.COB() && Jop.get(m.mode).get(-1).size()>0){
                             for(Map.Entry<Integer, JobUnit> e1 : Jop.get(m.mode).get(-1).entrySet()){
                                 if(!m.acceptable(e1.getValue()))break;
+//System.out.printf("1    :deal with job : %d\n",e1.getValue().uid);
                                 working = !moveJobToNextProcess(Jop, e1.getValue(),null, m, false);
                                 break;
                             }
@@ -140,7 +141,7 @@ public class Simulator extends BaseSimulator{
                     else if(m.status == MachineRuntimeInfo.MachineStatus.MS_CO){
                         if(m.toIdle <= realTime){
                             m.status = MachineRuntimeInfo.MachineStatus.MS_IDLE;
-//System.out.println(m.fullname()+" C/0 DONE from " + m.mode + "->" + m.COTarget + " width input: "+m.inputBuffer.size());
+System.out.println(m.fullname()+" C/0 DONE from " + m.mode + "->" + m.COTarget + " width input: "+m.inputBuffer.size()+" at: "+realTime);
                             m.mode = m.COTarget;
                             m.COTarget = -1;
                             log_on_machine_status_change(m);
@@ -276,6 +277,7 @@ public class Simulator extends BaseSimulator{
                         Models mi = Globalvar.gmodels.get(e1.model);
                         int FINAL = mi.processes.get(mi.processes.size()-1);
                         if(macBest.process == FINAL){
+//System.out.printf("2    :deal with job : %d\n",e1.uid);
                             working = !moveJobToNextProcess(Jop, e1, macBest, null,true);
                             continue;
                         }
@@ -311,7 +313,9 @@ public class Simulator extends BaseSimulator{
                                     }
                                 }
                                 if(!macs2.isEmpty()){
+//System.out.printf("3    :deal with job : %d\n",e2.uid);
                                     working = !moveJobToNextProcess(Jop,e2,macBest,minreleasemac,false);
+                                    break;
                                 }
                                 else if (macBest.generic){
                                     push_back.add(e2);
@@ -386,15 +390,15 @@ public class Simulator extends BaseSimulator{
         }
         return this;
     }
-    //--
+
     void update(PriorityQueue<JobUnit> jobs){
         while(!jobs.isEmpty()){
             JobUnit e = jobs.poll();
             int p = e.ioo < 0 ? -1 : Globalvar.gmodels.get(e.model).processes.get(e.ioo);
             if(!Jop.containsKey(e.model))
-                Jop.put(e.model,new HashMap<>());
+                Jop.put(e.model,new TreeMap<>());
             if(!Jop.get(e.model).containsKey(p))
-                Jop.get(e.model).put(p,new HashMap<>());
+                Jop.get(e.model).put(p,new TreeMap<>());
             Jop.get(e.model).get(p).put(e.uid,e);
         }
     }

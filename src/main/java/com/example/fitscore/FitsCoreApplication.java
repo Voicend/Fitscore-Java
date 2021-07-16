@@ -45,11 +45,14 @@ public class FitsCoreApplication {
                 config = new HashMap<>();
                 config.put(COInfo.getKey(),COInfo.getValue());
                 Globalvar.gproductLine.machines.get(COInfo.getKey()).setstate(MachineRuntimeInfo.MachineState.S_ONLINE);
+//                Globalvar.printconfig(simulator.realTime,config);
             }
+
             simulator.triggerIndexVex = new ArrayList<>();
             /*更新任务并开始仿真*/
             simulator.update(Globalvar.jobs);
-            int ok = simulator.setup(config).simulate();
+            simulator.setup(config);
+            int ok = simulator.simulate();
             if(simulator.realTime - simulator.lastJobReleaseTime > Globalvar.endlessLoopWaitTime){
                 //log
                 System.out.println("jump out endless loop\n JOP:\n");
@@ -64,7 +67,6 @@ public class FitsCoreApplication {
             Globalvar.jobs = simulator.jobs;
             Globalvar.jop = simulator.Jop;
 
-            triggerIndexVec = simulator.triggerIndexVex;
             //触发重新枚举前，对每一个机器的状态信息，jobs状态信息和需要传入逐秒仿真的信息进行更新
             Globalvar.refresh((int)simulator.realTime,minDayIndexEachModel);
         }

@@ -1,9 +1,6 @@
 package com.example.fitscore;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.PriorityQueue;
+import java.util.*;
 
 public class TaskManager {
     private static final TaskManager instance = new TaskManager();
@@ -26,7 +23,7 @@ public class TaskManager {
         int index = tasks.size() - 1;
         indexer.put(index, ttasks);
     }
-    int fill(PriorityQueue<JobUnit>jobs, int countofdays, ArrayList<Task>tasks){
+    int fill(PriorityQueue<JobUnit> jobs, int countofdays, ArrayList<Task>tasks){
         int result = 0;
         do{
             if(empty())

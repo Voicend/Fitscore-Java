@@ -11,7 +11,7 @@ public class JobUnit extends JobUnitInfo implements Serializable {
         JUS_TRANSITING		//运输中
     }
     State state = State.JUS_UNSET;
-    int ioo = -1;
+    int ioo = -1;//index of process
     int process = -1;
     double releaseTime = 0;
     int machineid = -1;

@@ -173,7 +173,7 @@ public class ProductLine extends ArrayList<ArrayList<Machine>> implements Serial
                     }
                     ArrayList<Integer>capacityVec2 = productLineTemp.getLowestCapacityProcesses(machine.mode);
                     if(!capacityVec2.contains(machine.process)){
-                        System.out.println("machine_index:"+machine._index);
+//                        System.out.println("machine_index:"+machine._index);
                     }
                 }
             }
@@ -193,8 +193,8 @@ public class ProductLine extends ArrayList<ArrayList<Machine>> implements Serial
         if(processIndex < 0)
             return false;
         int lastProcess = Globalvar.gmodels.get(mode).processes.get(processIndex);
-        double capacityInProcess = Globalvar.gproductLine.getCapacityInProcess(mode,machineProcess);
-        double capacityInLastProcess = Globalvar.gproductLine.getCapacityInProcess(mode, lastProcess);
+        int capacityInProcess = (int)Globalvar.gproductLine.getCapacityInProcess(mode,machineProcess);
+        int capacityInLastProcess = (int)Globalvar.gproductLine.getCapacityInProcess(mode, lastProcess);
         return capacityInProcess > capacityInLastProcess;
     }
     public ProductLine myclone() {

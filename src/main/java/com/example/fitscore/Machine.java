@@ -58,7 +58,7 @@ public class Machine extends MachineRuntimeInfo implements Serializable{
     //加工完成进入料道
     int finishJob(JobUnit job, int now){
         job.releaseTime = now;
-        outputBuffer.offer(job);
+        outputBuffer.add(job);
         model.poll();
         toIdle = now;
         status = MachineStatus.MS_IDLE;
